@@ -142,6 +142,8 @@ class HTML5Window
 			var style = canvas.style;
 			style.setProperty("-webkit-transform", "translateZ(0)", null);
 			style.setProperty("transform", "translateZ(0)", null);
+			style.setProperty("outline", "none", null);
+
 		}
 		else if (div != null)
 		{
@@ -156,6 +158,7 @@ class HTML5Window
 			style.setProperty("-moz-user-select", "none", null);
 			style.setProperty("-ms-user-select", "none", null);
 			style.setProperty("-o-user-select", "none", null);
+			style.setProperty("outline", "none", null);
 		}
 
 		if (parent.__width == 0 && parent.__height == 0)
