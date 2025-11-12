@@ -70,6 +70,7 @@ class HTML5Window
 	private var requestedFullscreen:Bool;
 	private var resizeElement:Bool;
 	private var scale = 1.0;
+	private var checkScale: Bool = false; // to cache the AllowHighDPI and DOM render check result
 	private var setHeight:Int;
 	private var setWidth:Int;
 	private var textInputEnabled:Bool;
@@ -108,6 +109,7 @@ class HTML5Window
 		if (Reflect.hasField(attributes, "allowHighDPI") && attributes.allowHighDPI && renderType != DOM)
 		{
 			scale = Browser.window.devicePixelRatio;
+			checkScale = true;
 		}
 
 		parent.__scale = scale;
@@ -1345,6 +1347,11 @@ class HTML5Window
 	private function updateSize():Void
 	{
 		if (!parent.__resizable) return;
+
+		if (checkScale) {
+			scale =  Browser.window.devicePixelRatio;
+			parent.__scale = scale;
+		}
 
 		var elementWidth:Float;
 		var elementHeight:Float;
