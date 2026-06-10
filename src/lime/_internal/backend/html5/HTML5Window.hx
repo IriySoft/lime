@@ -322,7 +322,8 @@ class HTML5Window
 
 			if (forceWebGL || (!forceCanvas && (!Reflect.hasField(contextAttributes, "hardware") || contextAttributes.hardware)))
 			{
-				var transparentBackground = Reflect.hasField(contextAttributes, "background") && contextAttributes.background == null;
+				var transparentBackground = (Reflect.hasField(contextAttributes, "background") && contextAttributes.background == null)
+					|| parent.transparent;
 				var colorDepth = Reflect.hasField(contextAttributes, "colorDepth") ? contextAttributes.colorDepth : 16;
 
 				var options =
@@ -1342,6 +1343,11 @@ class HTML5Window
 	}
 
 	public function setVisible(value:Bool):Bool
+	{
+		return value;
+	}
+
+	public function setAlwaysOnTop(value:Bool):Bool
 	{
 		return value;
 	}
