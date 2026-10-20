@@ -12,6 +12,9 @@
 #if defined(LIME_SDL) && defined(HX_WINDOWS) && !defined(HX_WINRT)
 #include <commctrl.h>
 #include <dwmapi.h>
+#ifdef LIME_NATIVE_DESKTOP
+#include <native_desktop/WindowsAppearance.h>
+#endif
 #endif
 
 namespace lime {
@@ -50,10 +53,12 @@ namespace lime {
 	static void ApplyWindowsAppearance (HWND window, int appearance) {
 		typedef HRESULT (WINAPI *SetAttribute) (HWND, DWORD, LPCVOID, DWORD);
 		static SetAttribute set = DwmLibrary () ? (SetAttribute)GetProcAddress (DwmLibrary (), "DwmSetWindowAttribute") : NULL;
-		if (!set) return;
 		BOOL dark = !HighContrast () && (appearance == 2 || (appearance == 0 && SystemDark ()));
+		#ifdef LIME_NATIVE_DESKTOP
+		native_desktop::SetWindowsMenuAppearance (window, appearance);
+		#endif
 		// DWMWA_USE_IMMERSIVE_DARK_MODE; older systems reject it without changing the window.
-		if (SUCCEEDED (set (window, 20, &dark, sizeof (dark))))
+		if (set && SUCCEEDED (set (window, 20, &dark, sizeof (dark))))
 			RedrawWindow (window, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
 	}
 
@@ -110,6 +115,7 @@ namespace lime {
 		ApplyWindowsAppearance (handle, appearance);
 		#elif defined(HX_LINUX) && defined(SDL_VIDEO_DRIVER_X11)
 		if (info.subsystem != SDL_SYSWM_X11) return;
+		SDL_SetWindowData (native, "Lime.WindowAppearance", (void*)(intptr_t)(appearance + 1));
 		static X11AppearanceAPI x11;
 		if (!x11.ready ()) return;
 		::Display* display = info.info.x11.display;

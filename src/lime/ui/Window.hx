@@ -43,7 +43,11 @@ class Window
 		Preferred appearance of the window decorations. Defaults to `System`.
 		An omitted creation attribute preserves the platform's existing default behavior.
 		Assigning `System` explicitly follows system appearance where supported.
-		This does not recolor application content or guarantee native menu colors.
+		Windows desktop applies the preference to the frame and Lime menus; high contrast
+		takes precedence. macOS 10.14+ applies a per-window Aqua or Dark Aqua appearance.
+		X11 sets a decoration hint that window managers may ignore; GTK context menus request
+		the current theme's light or dark variant when available. HTML5 sets `color-scheme`.
+		This does not recolor application content or change global toolkit settings.
 		Unsupported platforms retain the requested preference without changing their UI.
 	**/
 	public var appearance(get, set):WindowAppearance;
