@@ -30,6 +30,7 @@ import lime.system.System;
 import lime.system.Clipboard;
 import lime.ui.Gamepad;
 import lime.ui.Joystick;
+import lime.ui.Menu;
 import lime.ui.MouseCursor;
 import lime.ui.MouseWheelMode;
 import lime.ui.Touch;
@@ -59,6 +60,7 @@ class HTML5Window
 
 	private var cacheElementHeight:Float;
 	private var cacheElementWidth:Float;
+	private var cacheElementScale:Float;
 	private var cacheMouseX:Float;
 	private var cacheMouseY:Float;
 	private var cursor:MouseCursor;
@@ -71,6 +73,10 @@ class HTML5Window
 	private var resizeElement:Bool;
 	private var scale = 1.0;
 	private var checkScale: Bool = false; // to cache the AllowHighDPI and DOM render check result
+	private var highDPI:Bool;
+	#if !lime_disable_window_scale_change
+	private var devicePixelRatioMediaQuery:js.html.MediaQueryList;
+	#end
 	private var setHeight:Int;
 	private var setWidth:Int;
 	private var textInputEnabled:Bool;
@@ -106,7 +112,9 @@ class HTML5Window
 
 		var element = parent.element;
 
-		if (Reflect.hasField(attributes, "allowHighDPI") && attributes.allowHighDPI && renderType != DOM)
+		highDPI = Reflect.hasField(attributes, "allowHighDPI") && attributes.allowHighDPI && renderType != DOM;
+
+		if (highDPI)
 		{
 			scale = Browser.window.devicePixelRatio;
 			checkScale = true;
@@ -173,6 +181,7 @@ class HTML5Window
 
 			cacheElementWidth = parent.__width;
 			cacheElementHeight = parent.__height;
+			cacheElementScale = scale;
 
 			resizeElement = true;
 		}
@@ -198,6 +207,15 @@ class HTML5Window
 		}
 
 		updateSize();
+
+		#if !lime_disable_window_scale_change
+		// Only after the canvas or div exists, since a scale change calls updateSize().
+		// Without high DPI the scale stays 1, so there is nothing to watch.
+		if (highDPI)
+		{
+			watchDevicePixelRatio();
+		}
+		#end
 
 		if (element != null)
 		{
@@ -322,7 +340,8 @@ class HTML5Window
 
 			if (forceWebGL || (!forceCanvas && (!Reflect.hasField(contextAttributes, "hardware") || contextAttributes.hardware)))
 			{
-				var transparentBackground = Reflect.hasField(contextAttributes, "background") && contextAttributes.background == null;
+				var transparentBackground = (Reflect.hasField(contextAttributes, "background") && contextAttributes.background == null)
+					|| parent.transparent;
 				var colorDepth = Reflect.hasField(contextAttributes, "colorDepth") ? contextAttributes.colorDepth : 16;
 
 				var options =
@@ -356,6 +375,7 @@ class HTML5Window
 				context.canvas2D = cast canvas.getContext("2d");
 				context.type = CANVAS;
 				context.version = "";
+				context.attributes.hardware = false;
 			}
 			else
 			{
@@ -377,6 +397,7 @@ class HTML5Window
 
 				context.type = WEBGL;
 				context.version = isWebGL2 ? "2" : "1";
+				context.attributes.hardware = true;
 			}
 		}
 
@@ -431,9 +452,24 @@ class HTML5Window
 		}
 	}
 
+	public function flash(mode:Int):Bool
+	{
+		return false;
+	}
+
+	public function getKeyboardGrab():Bool
+	{
+		return false;
+	}
+
 	public function getMouseLock():Bool
 	{
 		return false;
+	}
+
+	public function getMouseRect():Rectangle
+	{
+		return null;
 	}
 
 	public function getOpacity():Float
@@ -997,6 +1033,8 @@ class HTML5Window
 
 	public function move(x:Int, y:Int):Void {}
 
+	public function popupMenu(menu:Menu, x:Null<Float>, y:Null<Float>):Void {}
+
 	public function readPixels(rect:Rectangle):Image
 	{
 		// TODO: Handle DIV, improve 3D canvas support
@@ -1214,12 +1252,21 @@ class HTML5Window
 		return false;
 	}
 
+	public function setMenu(menu:Menu):Void {}
+
 	public function setMinimized(value:Bool):Bool
 	{
 		return false;
 	}
 
+	public function setKeyboardGrab(value:Bool):Bool
+	{
+		return false;
+	}
+
 	public function setMouseLock(value:Bool):Void {}
+
+	public function setMouseRect(value:Rectangle):Void {}
 
 	public function setOpacity(value:Float):Void {}
 
@@ -1329,6 +1376,17 @@ class HTML5Window
 		handleInputEvent(e);
 	}
 
+	public function setAppearance(value:lime.ui.WindowAppearance):Void
+	{
+		if (parent.element != null) parent.element.style.setProperty("color-scheme", value == lime.ui.WindowAppearance.System ? "light dark" : value);
+	}
+
+	public function getAppearance():lime.ui.WindowAppearance
+	{
+		if (parent.appearance != lime.ui.WindowAppearance.System) return parent.appearance;
+		return Browser.window.matchMedia("(prefers-color-scheme: dark)").matches ? lime.ui.WindowAppearance.Dark : lime.ui.WindowAppearance.Light;
+	}
+
 	public function setTitle(value:String):String
 	{
 		if (value != null)
@@ -1343,6 +1401,40 @@ class HTML5Window
 	{
 		return value;
 	}
+
+	public function setAlwaysOnTop(value:Bool):Bool
+	{
+		return value;
+	}
+
+	#if !lime_disable_window_scale_change
+	private function watchDevicePixelRatio(?e:Dynamic):Void
+	{
+		scale = Browser.window.devicePixelRatio;
+		if (parent.__scale != scale)
+		{
+			parent.__scale = scale;
+			parent.onDisplayScaleChange.dispatch();
+			updateSize();
+		}
+		if (devicePixelRatioMediaQuery != null)
+		{
+			#if haxe4
+			devicePixelRatioMediaQuery.removeEventListener("change", watchDevicePixelRatio);
+			#else
+			devicePixelRatioMediaQuery.removeListener(watchDevicePixelRatio);
+			#end
+			devicePixelRatioMediaQuery = null;
+		}
+		var mediaQueryString = '(resolution: ${scale}dppx)';
+		devicePixelRatioMediaQuery = Browser.window.matchMedia(mediaQueryString);
+		#if haxe4
+		devicePixelRatioMediaQuery.addEventListener("change", watchDevicePixelRatio);
+		#else
+		devicePixelRatioMediaQuery.addListener(watchDevicePixelRatio);
+		#end
+	}
+	#end
 
 	private function updateSize():Void
 	{
@@ -1367,10 +1459,12 @@ class HTML5Window
 			elementHeight = Browser.window.innerHeight;
 		}
 
-		if (elementWidth != cacheElementWidth || elementHeight != cacheElementHeight)
+		var scaleChanged = scale != cacheElementScale;
+		if (elementWidth != cacheElementWidth || elementHeight != cacheElementHeight || scaleChanged)
 		{
 			cacheElementWidth = elementWidth;
 			cacheElementHeight = elementHeight;
+			cacheElementScale = scale;
 
 			var stretch = resizeElement || (setWidth == 0 && setHeight == 0);
 
@@ -1378,7 +1472,7 @@ class HTML5Window
 			{
 				if (stretch)
 				{
-					if (parent.__width != elementWidth || parent.__height != elementHeight)
+					if (parent.__width != elementWidth || parent.__height != elementHeight || scaleChanged)
 					{
 						parent.__width = Std.int(elementWidth);
 						parent.__height = Std.int(elementHeight);
