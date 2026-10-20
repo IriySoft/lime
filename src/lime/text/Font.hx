@@ -34,6 +34,11 @@ import haxe.io.Path;
 @:access(lime.text.Glyph)
 class Font
 {
+	// GlyphImage in project/include/text/Font.h: five 32-bit fields then the
+	// pixels, padded to 4 bytes, with 4 bytes for each pixel
+	@:noCompletion private static inline var GLYPH_IMAGE_DATA = 20;
+	@:noCompletion private static inline var GLYPH_IMAGE_SIZE = 24;
+
 	/**
 	 * The ascender value of the font.
 	 */
@@ -60,6 +65,25 @@ class Font
 	public var numGlyphs:Int;
 
 	public var src:Dynamic;
+
+	/** Sets an OpenType variable-font axis. Unsupported axes/fonts return false.
+	 * Clone/reload a font before changing an axis when other renderers share its source.
+	 */
+	public function setVariation(tag:String, coordinate:Float):Bool {
+		if (tag == null || tag.length != 4 || !Math.isFinite(coordinate)) return false;
+		for (i in 0...4) if (tag.charCodeAt(i) < 32 || tag.charCodeAt(i) > 126) return false;
+		#if (lime_cffi && !macro)
+		if (src == null) return false;
+		var changed = NativeCFFI.lime_font_set_variation(src, tag, coordinate);
+		if (changed) {
+			isBold = NativeCFFI.lime_font_is_bold(src);
+			isItalic = NativeCFFI.lime_font_is_italic(src);
+		}
+		return changed;
+		#else
+		return false;
+		#end
+	}
 
 	/**
 	 * The underline position of the font.
@@ -416,9 +440,12 @@ class Font
 	 * @param fontSize The size to render the glyph at.
 	 * @param dpi The DPI used to size the glyph before rasterization.
 	 * @param loadFlags Additional FreeType load flags to apply when rasterizing.
+	 * @param subpixelX A horizontal shift of the outline before rasterizing, in pixels (0 to 1): for
+	 *   drawing a glyph at a whole pixel while showing where it falls between pixels. The image's
+	 *   origin stays at the whole pixel.
 	 * @return An `Image` instance representing the rendered glyph.
 	 */
-	public function renderGlyphWithLoadFlags(glyph:Glyph, fontSize:Int, dpi:Int = 96, ?loadFlags:Int):Image
+	public function renderGlyphWithLoadFlags(glyph:Glyph, fontSize:Int, dpi:Int = 96, ?loadFlags:Int, subpixelX:Float = 0.0):Image
 	{
 		#if (lime_cffi && !macro)
 		__setSize(fontSize, dpi);
@@ -427,8 +454,10 @@ class Font
 		var bytes:Bytes = Bytes.alloc(0); // Allocate some reasonable initial size
 
 		// Call native function to render glyph and get byte data
-		bytes = loadFlags == null ? NativeCFFI.lime_font_render_glyph(src, glyph,
-			bytes) : NativeCFFI.lime_font_render_glyph_with_flags(src, glyph, loadFlags, bytes);
+		var subpixelX64:Int = Math.round(subpixelX * 64);
+		bytes = subpixelX64 != 0 ? NativeCFFI.lime_font_render_glyph_with_offset(src, glyph, loadFlags == null ? 0 : loadFlags, subpixelX64, bytes)
+			: loadFlags == null ? NativeCFFI.lime_font_render_glyph(src, glyph, bytes)
+			: NativeCFFI.lime_font_render_glyph_with_flags(src, glyph, loadFlags, bytes);
 
 		if (bytes != null && bytes.length > 0)
 		{
@@ -539,13 +568,10 @@ class Font
 
 			while (i < count)
 			{
-				bytesPosition += 4;
-				width = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
-				height = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
-
-				bytesPosition += (4 * 2) + width * height;
+				var recordPosition = bytesPosition;
+				width = bytes.getInt32(recordPosition + 4);
+				height = bytes.getInt32(recordPosition + 8);
+				bytesPosition = recordPosition + GLYPH_IMAGE_SIZE + width * height * 4;
 
 				if (offsetX + width > bufferWidth)
 				{
@@ -603,16 +629,13 @@ class Font
 
 			for (i in 0...count)
 			{
-				index = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
-				width = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
-				height = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
-				x = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
-				y = bytes.getInt32(bytesPosition);
-				bytesPosition += 4;
+				var recordPosition = bytesPosition;
+				index = bytes.getInt32(recordPosition);
+				width = bytes.getInt32(recordPosition + 4);
+				height = bytes.getInt32(recordPosition + 8);
+				x = bytes.getInt32(recordPosition + 12);
+				y = bytes.getInt32(recordPosition + 16);
+				var pixelPosition = recordPosition + GLYPH_IMAGE_DATA;
 
 				if (offsetX + width > bufferWidth)
 				{
@@ -621,12 +644,18 @@ class Font
 					maxRows = 0;
 				}
 
-				for (i in 0...height)
+				// Glyphs come as white with their coverage in alpha, which the atlas keeps
+				for (row in 0...height)
 				{
-					dataPosition = ((i + offsetY) * bufferWidth) + offsetX;
-					data.blit(dataPosition, bytes, bytesPosition, width);
-					bytesPosition += width;
+					dataPosition = ((row + offsetY) * bufferWidth) + offsetX;
+
+					for (column in 0...width)
+					{
+						data.set(dataPosition + column, bytes.get(pixelPosition + (row * width + column) * 4 + 3));
+					}
 				}
+
+				bytesPosition = recordPosition + GLYPH_IMAGE_SIZE + width * height * 4;
 
 				image = new Image(buffer, offsetX, offsetY, width, height);
 				image.x = x;
