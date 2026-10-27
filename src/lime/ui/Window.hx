@@ -2621,6 +2621,9 @@ class Window
 
 	public function resize(width:Int, height:Int):Void
 	{
+		#if debug
+		trace("Lime Window resize to " + width + " x " + height + " (min is " + __minWidth + " x " + __minHeight + ")");
+		#end
 		if (width < __minWidth)
 		{
 			width = __minWidth;
