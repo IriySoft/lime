@@ -536,6 +536,9 @@ class NativeWindow
 
 	public function resize(width:Int, height:Int):Void
 	{
+		#if debug 
+		trace("Lime NativeWindow resize to "+width+" x "+height);
+		#end
 		if (handle != null)
 		{
 			#if (!macro && lime_cffi)
@@ -546,6 +549,9 @@ class NativeWindow
 
 	public function setMinSize(width:Int, height:Int):Void
 	{
+		#if debug 
+		trace("Lime NativeWindow minsize to "+width+" x "+height);
+		#end
 		if (handle != null)
 		{
 			#if (!macro && lime_cffi)
@@ -556,6 +562,9 @@ class NativeWindow
 
 	public function setMaxSize(width:Int, height:Int):Void
 	{
+		#if debug 
+		trace("Lime NativeWindow maxsize to "+width+" x "+height);
+		#end
 		if (handle != null)
 		{
 			#if (!macro && lime_cffi)
