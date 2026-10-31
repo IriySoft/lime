@@ -34,6 +34,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib --global update haxelib --quiet
           haxelib install ../hxcpp-4.3.53.zip --quiet
@@ -168,6 +169,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib --global update haxelib --quiet
           haxelib install ../hxcpp-4.3.53.zip --quiet
@@ -258,6 +260,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib --global update haxelib --quiet
           haxelib install ../hxcpp-4.3.53.zip --quiet
@@ -289,7 +292,7 @@ jobs:
           SDL_AUDIODRIVER=dummy xvfb-run -a Export/linux/bin/LimeVulkanSmoke
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
 
       - uses: actions/checkout@v6
@@ -308,6 +311,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -336,6 +340,17 @@ jobs:
         id: tls-python
         with:
           python-version: '3.12'
+
+      - name: Set trust settings for the HTTPS tests
+        working-directory: tests/unit
+        run: |
+          # Lets the runner change the administrator's trust settings without a password prompt.
+          # macOS 15 refuses this change through security authorizationdb, so it is made in the
+          # authorization database itself, where class 4 is allow
+          sudo sqlite3 /var/db/auth.db "UPDATE rules SET class = 4 WHERE name = 'com.apple.trust-settings.admin'"
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain fixtures/trusted-ca.pem
+          sudo security add-trusted-cert -d -r deny -k /Library/Keychains/System.keychain fixtures/test-ca.pem
+          echo "LIME_TEST_TRUST_SETTINGS=1" >> $GITHUB_ENV
 
       - name: Run unit tests
         working-directory: tests/unit
@@ -425,6 +440,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -526,6 +542,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -678,6 +695,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.168.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.168/hxcpp-4.3.168.zip
           haxelib install ../hxcpp-4.3.168.zip --quiet
           haxelib install format --quiet
@@ -760,6 +778,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -827,7 +846,7 @@ jobs:
           lime build android -release -verbose -nocolor -eval
 
   ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
 
       - uses: actions/checkout@v6
@@ -846,6 +865,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -917,6 +937,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -1038,6 +1059,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           haxelib install dox --quiet
           haxelib dev lime ${{ github.workspace }}
 
@@ -1070,6 +1092,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib git lime-samples https://github.com/openfl/lime-samples --quiet
@@ -1127,6 +1150,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           curl --output ../hxcpp-4.3.53.zip --location https://github.com/HaxeFoundation/hxcpp/releases/download/v4.3.53/hxcpp-4.3.53.zip
           haxelib install ../hxcpp-4.3.53.zip --quiet
           haxelib install format --quiet
@@ -1163,7 +1187,7 @@ jobs:
     needs: package-haxelib
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-14]
+        os: [windows-latest, ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
 
@@ -1184,6 +1208,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           haxelib git lime-samples https://github.com/openfl/lime-samples --quiet
 
       - uses: actions/download-artifact@v8
@@ -1220,7 +1245,7 @@ jobs:
     needs: package-haxelib
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-14]
+        os: [windows-latest, ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
 
@@ -1241,6 +1266,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           haxelib git lime-samples https://github.com/openfl/lime-samples --quiet
 
       - uses: actions/download-artifact@v8
@@ -1295,6 +1321,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           haxelib install genes --quiet
           haxelib git lime-samples https://github.com/openfl/lime-samples --quiet
 
@@ -1357,7 +1384,7 @@ jobs:
     strategy:
       matrix:
         haxe-version: [3.4.7, 4.2.5]
-        os: [windows-latest, ubuntu-22.04, macos-14]
+        os: [windows-latest, ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
 
@@ -1378,6 +1405,7 @@ jobs:
         run: |
           haxelib install native-desktop 1.0.1 --quiet
           haxelib install native-ipc 1.0.0 --quiet
+          haxelib install wsproto 1.0.0 --quiet
           haxelib git lime-samples https://github.com/openfl/lime-samples --quiet
 
       - uses: actions/download-artifact@v8
