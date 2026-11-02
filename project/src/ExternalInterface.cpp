@@ -2961,7 +2961,8 @@ namespace lime {
 		Font *font = (Font*)val_data (fontHandle);
 		Bytes bytes (data);
 
-		if (font->RenderGlyphWithFlags (index, loadFlags, &bytes, 0, subpixelX)) {
+		// Without load flags (-1), the glyph is rendered as lime_font_render_glyph renders it
+		if (loadFlags < 0 ? font->RenderGlyph (index, &bytes, 0, subpixelX) : font->RenderGlyphWithFlags (index, loadFlags, &bytes, 0, subpixelX)) {
 
 			return bytes.Value (data);
 
@@ -3012,7 +3013,7 @@ namespace lime {
 		#ifdef LIME_FREETYPE
 		Font *font = (Font*)fontHandle->ptr;
 
-		if (font->RenderGlyphWithFlags (index, loadFlags, data, 0, subpixelX)) {
+		if (loadFlags < 0 ? font->RenderGlyph (index, data, 0, subpixelX) : font->RenderGlyphWithFlags (index, loadFlags, data, 0, subpixelX)) {
 
 			return data;
 
@@ -14440,7 +14441,7 @@ namespace lime {
 	#define _TTOUCH_EVENT _OBJ (_I32 _F64 _F64 _I32 _F64 _I32 _F64 _F64)
 	#define _TTRAY_ICON_EVENT _OBJ (_I32 _I32 _I32)
 	#define _TVECTOR2 _OBJ (_F64 _F64)
-	#define _TVORBISFILE _OBJ (_I32 _DYN)
+	#define _TVORBISFILE _OBJ (_I32 _DYN _TBYTES)
 	#define _TWINDOW_EVENT _OBJ (_I32 _I32 _I32 _I32 _I32 _I32)
 
 	#define _TARRAYBUFFER _TBYTES

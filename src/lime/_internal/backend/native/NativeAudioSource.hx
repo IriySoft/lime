@@ -61,6 +61,8 @@ class NativeAudioSource
 	private var recoveryPosition:Vector4;
 	private var recoveryTime:Int;
 	private var sdlSoundStream:CFFIPointer;
+	// The native stream reads from these bytes, which the buffer drops when disposed
+	private var sdlSoundStreamBytes:Bytes;
 	private var samples:Int;
 	private var stream:Bool;
 	private var streamByteRate:Float;
@@ -354,6 +356,8 @@ class NativeAudioSource
 			NativeCFFI.lime_sdl_sound_stream_clear(sdlSoundStream);
 			sdlSoundStream = null;
 		}
+
+		sdlSoundStreamBytes = null;
 		#end
 	}
 
@@ -388,7 +392,8 @@ class NativeAudioSource
 
 		if (parent.buffer.__srcSDLSoundBytes != null)
 		{
-			sdlSoundStream = NativeCFFI.lime_sdl_sound_stream_from_bytes(parent.buffer.__srcSDLSoundBytes);
+			sdlSoundStreamBytes = parent.buffer.__srcSDLSoundBytes;
+			sdlSoundStream = NativeCFFI.lime_sdl_sound_stream_from_bytes(sdlSoundStreamBytes);
 		}
 		else if (parent.buffer.__srcSDLSoundPath != null)
 		{
@@ -1227,21 +1232,30 @@ class NativeAudioSource
 	{
 		if (playing && length != value)
 		{
-			if (timer != null)
-			{
-				timer.stop();
-			}
-
-			var timeRemaining = Std.int((value - getCurrentTime()) / getPitch());
-
-			if (timeRemaining > 0)
-			{
-				timer = new Timer(timeRemaining);
-				timer.run = timer_onRun;
-			}
+			length = value;
+			startCompletionTimer(Std.int((value - getCurrentTime()) / getPitch()));
 		}
 
 		return length = value;
+	}
+
+	private function startCompletionTimer(timeRemaining:Int):Void
+	{
+		if (timer != null)
+		{
+			timer.stop();
+		}
+
+		// A stream that loops inline counts its loops as it queues them, and completes when it runs out
+		if (timeRemaining > 0 && !shouldLoopStreamInline())
+		{
+			timer = new Timer(timeRemaining);
+			timer.run = timer_onRun;
+		}
+		else
+		{
+			timer = null;
+		}
 	}
 
 	public function getLoops():Int
@@ -1251,7 +1265,15 @@ class NativeAudioSource
 
 	public function setLoops(value:Int):Int
 	{
-		return loops = value;
+		loops = value;
+
+		if (playing && timer != null && shouldLoopStreamInline())
+		{
+			timer.stop();
+			timer = null;
+		}
+
+		return loops;
 	}
 
 	public function getPitch():Float
@@ -1270,23 +1292,7 @@ class NativeAudioSource
 	{
 		if (playing && value != getPitch())
 		{
-			if (timer != null)
-			{
-				timer.stop();
-			}
-
-			var totalLength = getLength();
-			var timeRemaining = Std.int((totalLength - getCurrentTime()) / value);
-
-			if (timeRemaining > 0)
-			{
-				timer = new Timer(timeRemaining);
-				timer.run = timer_onRun;
-			}
-			else
-			{
-				timer = null;
-			}
+			startCompletionTimer(Std.int((getLength() - getCurrentTime()) / value));
 		}
 
 		if (handle != null)

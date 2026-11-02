@@ -85,6 +85,7 @@ class WindowTest extends Test
 		}
 
 		Assert.isTrue(isTransparent(window), "a window created transparent was made opaque");
+		Assert.equals(isTransparent(window), window.transparent);
 	}
 
 	public function testWindowsAfterATransparentOneAreOpaque():Void
@@ -101,6 +102,46 @@ class WindowTest extends Test
 		}
 
 		Assert.isFalse(isTransparent(second), "a window created after a transparent one was made transparent too");
+	}
+
+	public function testEachSizeLimitSetsOnlyItself():Void
+	{
+		var window = create(false);
+
+		if (window == null)
+		{
+			canCreateWindows();
+			return;
+		}
+
+		window.minWidth = 40;
+		window.minHeight = 30;
+		window.maxWidth = 800;
+		window.maxHeight = 600;
+
+		Assert.equals("40,30,800,600", [window.minWidth, window.minHeight, window.maxWidth, window.maxHeight].join(","));
+	}
+
+	public function testTheFrameRateOutlastsOtherFrameSettings():Void
+	{
+		// The first window created becomes the application's own
+		if (create(false) == null)
+		{
+			canCreateWindows();
+			return;
+		}
+
+		var application = Application.current;
+		var window = application.window;
+		var rate = window.frameRate;
+		window.frameRate = 30;
+
+		// Each of these applies every frame setting again, from the rate the application keeps
+		application.vsyncMode = application.vsyncMode;
+		application.frameProfile = application.frameProfile;
+
+		Assert.equals(30.0, window.frameRate);
+		window.frameRate = rate;
 	}
 
 	public function testFlashing():Void

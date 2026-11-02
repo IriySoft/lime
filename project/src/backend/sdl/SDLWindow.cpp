@@ -448,6 +448,27 @@ namespace lime {
 		transparent = false;
 		useVulkan = (flags & WINDOW_FLAG_VULKAN) != 0;
 
+		if (useVulkan) {
+
+			// Without Vulkan in this build, or a Vulkan loader on this system, the window is made for
+			// OpenGL instead, as no window could be made for Vulkan
+			#ifdef LIME_VULKAN
+			bool available = SDL_Vulkan_LoadLibrary (NULL) == 0;
+			if (available) SDL_Vulkan_UnloadLibrary ();
+			#else
+			bool available = false;
+			#endif
+
+			if (!available) {
+
+				SDL_LogWarn (SDL_LOG_CATEGORY_RENDER, "Vulkan is not available, so the window uses OpenGL");
+				useVulkan = false;
+				flags &= ~WINDOW_FLAG_VULKAN;
+
+			}
+
+		}
+
 		contextWidth = 0;
 		contextHeight = 0;
 
@@ -695,7 +716,21 @@ namespace lime {
 
 			// }
 
+			// Windows share textures, buffers and shaders through the context current as
+			// one is made, which Lime keeps to the main window's
+			bool shareContext = SDL_GL_GetCurrentContext () != NULL;
+			SDL_GL_SetAttribute (SDL_GL_SHARE_WITH_CURRENT_CONTEXT, shareContext ? 1 : 0);
 			context = SDL_GL_CreateContext (sdlWindow);
+
+			if (!context && shareContext) {
+
+				SDL_LogWarn (SDL_LOG_CATEGORY_VIDEO, "The window's OpenGL context could not share with the other windows: %s", SDL_GetError ());
+				SDL_GL_SetAttribute (SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
+				context = SDL_GL_CreateContext (sdlWindow);
+
+			}
+
+			SDL_GL_SetAttribute (SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
 
 			if (context && SDL_GL_MakeCurrent (sdlWindow, context) == 0) {
 
@@ -897,10 +932,12 @@ namespace lime {
 		if (context && !sdlRenderer) {
 
 			SDL_GL_SwapWindow (sdlWindow);
+			SDLApplication::NoteContextFlip ();
 
 		} else if (sdlRenderer) {
 
 			SDL_RenderPresent (sdlRenderer);
+			SDLApplication::NoteContextFlip ();
 
 		}
 
