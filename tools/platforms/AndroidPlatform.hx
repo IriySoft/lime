@@ -466,7 +466,7 @@ class AndroidPlatform extends PlatformTarget
 			{
 				"android:label": project.meta.title,
 				"android:allowBackup": "true",
-				"android:theme": "@android:style/Theme.NoTitleBar" + (project.window.fullscreen ? ".Fullscreen" : ""),
+				"android:theme": "@style/Theme.LimeApp" + (project.window.fullscreen ? ".Fullscreen" : ""),
 				"android:hardwareAccelerated": "true",
 				"android:allowNativeHeapPointerTagging": context.ANDROID_TARGET_SDK_VERSION >= 30 ? "false" : null
 			});
