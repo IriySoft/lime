@@ -432,7 +432,7 @@ class AndroidPlatform extends PlatformTarget
 		}
 
 		var context = project.templateContext;
-
+		context.WIN_FLASHBACKGROUND = (project.window.background != null ? "#" + StringTools.hex(project.window.background, 6) : "#FFFFFF");
 		context.CPP_DIR = targetDirectory + "/obj";
 		context.OUTPUT_DIR = targetDirectory;
 		context.ANDROID_MINIMUM_SDK_VERSION = project.config.getInt("android.minimum-sdk-version", 21);
