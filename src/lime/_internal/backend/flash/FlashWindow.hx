@@ -30,6 +30,7 @@ import lime.system.Display;
 import lime.system.DisplayMode;
 import lime.system.System;
 import lime.ui.Window;
+import lime.ui.WindowHandle;
 
 @:access(lime._internal.backend.flash.FlashApplication)
 @:access(lime.app.Application)
@@ -591,6 +592,11 @@ class FlashWindow
 		return null;
 	}
 
+	public function getNativeHandle():WindowHandle
+	{
+		return null;
+	}
+
 	public function getOpacity():Float
 	{
 		return 1.0;
@@ -673,7 +679,7 @@ class FlashWindow
 
 	public function getAppearance():lime.ui.WindowAppearance
 	{
-		return lime.ui.WindowAppearance.System;
+		return lime.ui.WindowAppearance.SYSTEM;
 	}
 
 	public function setTitle(value:String):String

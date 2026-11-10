@@ -48,18 +48,6 @@ namespace lime
 		event.type = localSocketEventType;
 		SDL_PushEvent(&event);
 	}
-#if defined(HX_WINDOWS) && !defined(HX_WINRT)
-	static SDL_atomic_t s_nativeModalLoopDepth;
-	static SDL_atomic_t s_inModalEventWatch;
-
-	// Restore native callback state even if a dispatched callback throws.
-	class ScopedModalWatch {
-		bool entered;
-	public:
-		ScopedModalWatch():entered(SDL_AtomicCAS(&s_inModalEventWatch, 0, 1) != 0) {}
-		~ScopedModalWatch() { if (entered) SDL_AtomicSet(&s_inModalEventWatch, 0); }
-		bool Entered() const { return entered; }
-	};
 
 	class ScopedModalGC {
 		bool wasBlocking;
@@ -76,6 +64,19 @@ namespace lime
 				SDL_AtomicSet(&s_waitEventBlocking, 1);
 			}
 		}
+	};
+
+#if defined(HX_WINDOWS) && !defined(HX_WINRT)
+	static SDL_atomic_t s_nativeModalLoopDepth;
+	static SDL_atomic_t s_inModalEventWatch;
+
+	// Restore native callback state even if a dispatched callback throws.
+	class ScopedModalWatch {
+		bool entered;
+	public:
+		ScopedModalWatch():entered(SDL_AtomicCAS(&s_inModalEventWatch, 0, 1) != 0) {}
+		~ScopedModalWatch() { if (entered) SDL_AtomicSet(&s_inModalEventWatch, 0); }
+		bool Entered() const { return entered; }
 	};
 
 	class ScopedModalCallbacks {
@@ -98,6 +99,14 @@ namespace lime
 	};
 #endif
 
+	// For native code that the system calls back while it waits for events, and
+	// which needs an answer from Haxe before it returns
+	void SDLApplication::CallFromEventPump(void (*callback)(void*), void* data)
+	{
+		ScopedModalGC gc;
+		callback(data);
+	}
+
 	void AllowHighDPI()
 	{
 
@@ -109,6 +118,10 @@ namespace lime
 		SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
 #endif
 	}
+
+	// Idle events leave this many milliseconds before a frame, and come this often
+	static const double IDLE_MIN_REMAINING = 2.0;
+	static const double IDLE_INTERVAL = 1.0;
 
 	SDLApplication::SDLApplication()
 	{
@@ -177,8 +190,10 @@ namespace lime
 #endif
 
 		framePeriod = 1000.0 / 60.0;
+		idleEvents = false;
 		lastUpdate = 0.0;
 		lastSleepCalibration = 0;
+		nextIdle = 0.0;
 		nextUpdate = 0.0;
 		performanceFrequency = SDL_GetPerformanceFrequency();
 		clockStartCounter = SDL_GetPerformanceCounter();
@@ -496,6 +511,23 @@ namespace lime
 			return true;
 
 		return (now >= nextUpdate);
+	}
+
+	bool SDLApplication::IsIdleDue(double now) const
+	{
+
+		return idleEvents && !schedulerUnthrottled && now >= nextIdle && nextUpdate - now >= IDLE_MIN_REMAINING;
+	}
+
+	void SDLApplication::DispatchIdle(double remaining)
+	{
+
+		ApplicationEvent idleEvent;
+		idleEvent.type = IDLE;
+		idleEvent.deltaTime = (int)remaining;
+		ApplicationEvent::Dispatch(&idleEvent);
+
+		nextIdle = GetCurrentTimeMs() + IDLE_INTERVAL;
 	}
 
 	bool SDLApplication::IsSchedulerUnthrottled() const
@@ -905,7 +937,41 @@ namespace lime
 
 		case SDL_QUIT:
 
+			// SDL raises SDL_QUIT for exits the application did not initiate itself:
+			// SIGTERM / SIGINT through its default signal handlers, Cmd+Q on macOS.
+			// Stopping the loop here skips the Haxe side entirely: Window.onClose,
+			// Application.onExit (documented as cancelable, but dispatched only after
+			// Exec has already returned) and anything built on them, such as OpenFL's
+			// NativeApplication "exiting". Route the quit as a close request on every
+			// open window instead, so the same cancelable chain runs as for a click on
+			// the close button. Only stop the loop outright when nothing is open; SDL
+			// also raises SDL_QUIT when the last window goes away.
+#if defined(ANDROID) || defined(IPHONE) || defined(EMSCRIPTEN)
+			// On mobile and the web, SDL_QUIT means the system is ending the
+			// application, which a close handler cannot refuse
 			active = false;
+#else
+			if (windows.empty () || !WindowEvent::callback)
+			{
+				active = false;
+				break;
+			}
+
+			{
+				// Closing a window unregisters it, so iterate over a copy.
+				std::vector<SDLWindow*> openWindows (windows);
+
+				for (std::vector<SDLWindow*>::const_iterator iter = openWindows.begin (); iter != openWindows.end (); ++iter)
+				{
+					if (!(*iter)->sdlWindow) continue;
+
+					windowEvent.type = WINDOW_CLOSE;
+					windowEvent.windowID = SDL_GetWindowID ((*iter)->sdlWindow);
+					WindowEvent::Dispatch (&windowEvent);
+				}
+			}
+#endif
+
 			break;
 
 		default:
@@ -1641,6 +1707,12 @@ namespace lime
 		RefreshVSyncState ();
 	}
 
+	void SDLApplication::SetIdleEvents(bool enabled)
+	{
+
+		idleEvents = enabled;
+	}
+
 	void SDLApplication::SetMainLoop(int profile, double frameRate, int timePrecision, int busyWait, int uncapMode)
 	{
 
@@ -1817,19 +1889,29 @@ namespace lime
 				return 0;
 			}
 
+			if (IsIdleDue(now))
+			{
+
+				DispatchIdle(remaining);
+				continue;
+			}
+
 			if (allowBusyWait && busyWaitOnly)
 			{
 				System::GCEnterBlocking();
+				SDL_AtomicSet(&s_waitEventBlocking, 1);
 				while ((nextUpdate - GetCurrentTimeMs()) > 0.0)
 				{
 					SDL_PumpEvents();
 					int result = SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
 					if (result != 0)
 					{
+						SDL_AtomicSet(&s_waitEventBlocking, 0);
 						System::GCExitBlocking();
 						return result == 1 ? 1 : 0;
 					}
 				}
+				SDL_AtomicSet(&s_waitEventBlocking, 0);
 				System::GCExitBlocking();
 				return 0;
 			}
@@ -1859,7 +1941,9 @@ namespace lime
 
 			Uint32 waitStart = SDL_GetTicks();
 			System::GCEnterBlocking();
+			SDL_AtomicSet(&s_waitEventBlocking, 1);
 			int result = SDL_WaitEventTimeout(event, waitMs);
+			SDL_AtomicSet(&s_waitEventBlocking, 0);
 			System::GCExitBlocking();
 			Uint32 waitElapsed = SDL_GetTicks() - waitStart;
 
@@ -1907,6 +1991,21 @@ namespace lime
 				return 1;
 
 			default:
+
+				if (IsIdleDue(GetCurrentTimeMs()))
+				{
+
+					// Haxe code runs on an idle event, which it can't do in a blocking section
+					if (isBlocking)
+					{
+						SDL_AtomicSet(&s_waitEventBlocking, 0);
+						System::GCExitBlocking();
+						isBlocking = false;
+					}
+
+					DispatchIdle(nextUpdate - GetCurrentTimeMs());
+					break;
+				}
 
 				if (!isBlocking)
 				{

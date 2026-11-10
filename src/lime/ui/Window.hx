@@ -33,16 +33,17 @@ class Window
 	/**
 	 * Whether windows have their own menu bar, set using `menu`.
 	 *
-	 * This is `true` on Windows. On macOS, the menu bar belongs to the
-	 * application instead (see `Application.supportsMenu`).
+	 * This is `true` on Windows, and on HTML5, where the menu bar is drawn
+	 * across the top of the window's element. On macOS, the menu bar belongs
+	 * to the application instead (see `Application.supportsMenu`).
 	**/
 	public static var supportsMenu(get, never):Bool;
 
 	public var application(default, null):Application;
 	/**
-		Preferred appearance of the window decorations. Defaults to `System`.
+		Preferred appearance of the window decorations. Defaults to `SYSTEM`.
 		An omitted creation attribute preserves the platform's existing default behavior.
-		Assigning `System` explicitly follows system appearance where supported.
+		Assigning `SYSTEM` explicitly follows system appearance where supported.
 		Windows desktop applies the preference to the frame and Lime menus; high contrast
 		takes precedence. macOS 10.14+ applies a per-window Aqua or Dark Aqua appearance.
 		X11 sets a decoration hint that window managers may ignore; GTK context menus request
@@ -53,7 +54,7 @@ class Window
 	public var appearance(get, set):WindowAppearance;
 
 	/**
-		The applied window appearance, or `System` when the backend cannot determine it.
+		The applied window appearance, or `SYSTEM` when the backend cannot determine it.
 		On X11 this reports the decoration hint, which the window manager may ignore.
 	**/
 	public var effectiveAppearance(get, never):WindowAppearance;
@@ -61,6 +62,12 @@ class Window
 	public var context(default, null):RenderContext;
 	public var cursor(get, set):MouseCursor;
 	public var display(get, null):Display;
+
+	/**
+		The display mode the window uses in fullscreen. Setting a mode makes fullscreen
+		exclusive at that mode, and setting `null` returns it to desktop (borderless)
+		fullscreen, which is not minimized when another window takes focus.
+	**/
 	public var displayMode(get, set):DisplayMode;
 	#if (!lime_doc_gen || (js && html5))
 	public var element(default, null):#if (js && html5) Element #else Dynamic #end;
@@ -73,7 +80,7 @@ class Window
 	 * main loop, up to 10,000. A value of 0 or less runs one frame per second.
 	 * The cap is ignored when the loop is uncapped (see `UncapMode`). With
 	 * vertical sync on, a cap at or above the display refresh rate leaves the
-	 * pacing to the display, and with `VSyncMode.Auto` and no vertical sync, a
+	 * pacing to the display, and with `VSyncMode.AUTO` and no vertical sync, a
 	 * cap above the refresh rate is held to it.
 	 *
 	 * On HTML5, a frame rate of 0, or of 60 or greater, renders on each
@@ -102,7 +109,9 @@ class Window
 	 * The menu displayed as this window's menu bar, or `null` for none.
 	 *
 	 * Changes to the menu are applied to the menu bar immediately. Adding or
-	 * removing the menu bar keeps the size of the window content the same.
+	 * removing the menu bar keeps the size of the window content the same,
+	 * except on HTML5, where the content of a window that fills its element
+	 * makes room for the menu bar.
 	 * Menu bar key equivalents are handled before `onKeyDown`, which is not
 	 * dispatched for them.
 	 *
@@ -133,6 +142,16 @@ class Window
 		Supported on native desktop targets.
 	**/
 	public var mouseRect(get, set):Rectangle;
+
+	/**
+		The system's own window behind this one, for native code that works with
+		it directly, or `null` where there is none: on web targets, and once the
+		window has closed.
+
+		Read it on the main thread when it is needed, and do not keep it. On
+		Android the window changes whenever the surface is recreated.
+	**/
+	public var nativeHandle(get, never):WindowHandle;
 
 	/**
 		Whether keys the system would otherwise take, such as Alt+Tab or the
@@ -261,7 +280,7 @@ class Window
 	private var clickCount:Int = 0;
 	@:noCompletion private var __attributes:WindowAttributes;
 	@:noCompletion private var __backend:WindowBackend;
-	@:noCompletion private var __appearance:WindowAppearance = System;
+	@:noCompletion private var __appearance:WindowAppearance = SYSTEM;
 	@:noCompletion private var __borderless:Bool;
 	@:noCompletion private var __fullscreen:Bool;
 	@:noCompletion private var __height:Int;
@@ -306,6 +325,7 @@ class Window
 				"minWidth": {get: p.get_minWidth, set: p.set_minWidth},
 				"mouseLock": {get: p.get_mouseLock, set: p.set_mouseLock},
 				"mouseRect": {get: p.get_mouseRect, set: p.set_mouseRect},
+				"nativeHandle": {get: p.get_nativeHandle},
 				"keyboardGrab": {get: p.get_keyboardGrab, set: p.set_keyboardGrab},
 
 				"resizable": {get: p.get_resizable, set: p.set_resizable},
@@ -2763,7 +2783,7 @@ class Window
 
 	@:noCompletion private function get_vsyncMode():VSyncMode
 	{
-		return (application != null) ? application.vsyncMode : VSyncMode.Off;
+		return (application != null) ? application.vsyncMode : VSyncMode.OFF;
 	}
 
 	@:noCompletion private function set_vsyncMode(value:VSyncMode):VSyncMode
@@ -2844,6 +2864,8 @@ class Window
 	{
 		#if (lime_cffi && !macro)
 		return (lime._internal.backend.native.NativeMenu.getSupport() & lime._internal.backend.native.NativeMenu.SUPPORT_WINDOW) != 0;
+		#elseif (js && html5)
+		return true;
 		#else
 		return false;
 		#end
@@ -2912,6 +2934,11 @@ class Window
 		return __backend.getMouseRect();
 	}
 
+	@:noCompletion private function get_nativeHandle():WindowHandle
+	{
+		return __backend.getNativeHandle();
+	}
+
 	@:noCompletion private function set_mouseRect(value:Rectangle):Rectangle
 	{
 		__backend.setMouseRect(value);
@@ -2978,7 +3005,7 @@ class Window
 
 	@:noCompletion private function set_appearance(value:WindowAppearance):WindowAppearance
 	{
-		if (value != System && value != Light && value != Dark) return __appearance;
+		if (value != SYSTEM && value != LIGHT && value != DARK) return __appearance;
 		__appearance = value;
 		__backend.setAppearance(value);
 		return value;
