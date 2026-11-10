@@ -55,6 +55,7 @@ import java.util.Locale;
 
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.EdgeToEdge;
 
 /**
     SDL Activity
@@ -324,6 +325,7 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
         Log.v(TAG, "Device: " + Build.DEVICE);
         Log.v(TAG, "Model: " + Build.MODEL);
         Log.v(TAG, "onCreate()");
+        EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
 
         try {
