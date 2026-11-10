@@ -30,11 +30,14 @@ import lime.system.System;
 import lime.system.Clipboard;
 import lime.ui.Gamepad;
 import lime.ui.Joystick;
+import lime.ui.KeyCode;
+import lime.ui.KeyModifier;
 import lime.ui.Menu;
 import lime.ui.MouseCursor;
 import lime.ui.MouseWheelMode;
 import lime.ui.Touch;
 import lime.ui.Window;
+import lime.ui.WindowHandle;
 
 @:access(lime._internal.backend.html5.HTML5Application)
 @:access(lime._internal.backend.html5.HTML5WebGL2RenderContext)
@@ -66,6 +69,7 @@ class HTML5Window
 	private var cursor:MouseCursor;
 	private var currentTouches = new Map<Int, Touch>();
 	private var isFullscreen:Bool;
+	private var menus:HTML5Menu;
 	private var parent:Window;
 	private var primaryTouch:Touch;
 	private var renderType:RenderContextType;
@@ -254,8 +258,8 @@ class HTML5Window
 			element.addEventListener("touchend", handleTouchEvent, true);
 			element.addEventListener("touchcancel", handleTouchEvent, true);
 
-			element.addEventListener("gamepadconnected", handleGamepadEvent, true);
-			element.addEventListener("gamepaddisconnected", handleGamepadEvent, true);
+			Browser.window.addEventListener("gamepadconnected", handleGamepadEvent, true);
+			Browser.window.addEventListener("gamepaddisconnected", handleGamepadEvent, true);
 		}
 
 		createContext();
@@ -264,6 +268,11 @@ class HTML5Window
 		{
 			canvas.addEventListener("webglcontextlost", handleContextEvent, false);
 			canvas.addEventListener("webglcontextrestored", handleContextEvent, false);
+		}
+
+		if (parent.application != null && parent.application.__menu != null)
+		{
+			setMenu(null);
 		}
 	}
 
@@ -277,6 +286,12 @@ class HTML5Window
 
 	public function close():Void
 	{
+		if (menus != null)
+		{
+			menus.close();
+			menus = null;
+		}
+
 		var element = parent.element;
 		if (element != null)
 		{
@@ -312,8 +327,8 @@ class HTML5Window
 			element.removeEventListener("touchend", handleTouchEvent, true);
 			element.removeEventListener("touchcancel", handleTouchEvent, true);
 
-			element.removeEventListener("gamepadconnected", handleGamepadEvent, true);
-			element.removeEventListener("gamepaddisconnected", handleGamepadEvent, true);
+			Browser.window.removeEventListener("gamepadconnected", handleGamepadEvent, true);
+			Browser.window.removeEventListener("gamepaddisconnected", handleGamepadEvent, true);
 		}
 
 		parent.application.__removeWindow(parent);
@@ -464,6 +479,11 @@ class HTML5Window
 		return null;
 	}
 
+	public function getNativeHandle():WindowHandle
+	{
+		return null;
+	}
+
 	public function getOpacity():Float
 	{
 		return 1.0;
@@ -503,7 +523,11 @@ class HTML5Window
 
 	private function handleContextMenuEvent(event:MouseEvent):Void
 	{
-		if ((parent.onMouseUp.canceled || parent.onMouseDown.canceled) && event.cancelable)
+		if (menus != null && (menus.isOpen || menus.isMenuBarTarget(cast event.target)) && event.cancelable)
+		{
+			event.preventDefault();
+		}
+		else if ((parent.onMouseUp.canceled || parent.onMouseDown.canceled) && event.cancelable)
 		{
 			event.preventDefault();
 		}
@@ -647,8 +671,21 @@ class HTML5Window
 		}
 	}
 
+	public function handleMenuKeyEquivalent(keyCode:KeyCode, modifier:KeyModifier):Bool
+	{
+		return menus != null && menus.handleKeyEquivalent(keyCode, modifier);
+	}
+
 	private function handleMouseEvent(event:MouseEvent):Void
 	{
+		// The menu bar is in the element, but not part of the window's content, other than
+		// for a drag that started in the content
+		if (menus != null && event.currentTarget == parent.element && menus.isMenuBarTarget(cast event.target)
+			&& ((event.type != "mousemove" && event.type != "mouseup") || event.buttons == 0))
+		{
+			return;
+		}
+
 		var x = 0.0;
 		var y = 0.0;
 
@@ -858,6 +895,9 @@ class HTML5Window
 
 	private function handleTouchEvent(event:TouchEvent):Void
 	{
+		// Left to the browser, so that taps on the menu bar become clicks
+		if (menus != null && menus.isMenuBarTarget(cast event.target)) return;
+
 		if (event.cancelable) event.preventDefault();
 
 		var rect = null;
@@ -1025,7 +1065,40 @@ class HTML5Window
 
 	public function move(x:Int, y:Int):Void {}
 
-	public function popupMenu(menu:Menu, x:Null<Float>, y:Null<Float>):Void {}
+	public function popupMenu(menu:Menu, x:Null<Float>, y:Null<Float>):Void
+	{
+		if (menu == null) return;
+
+		if (x == null || y == null)
+		{
+			x = cacheMouseX;
+			y = cacheMouseY;
+		}
+
+		// From window coordinates to the page, as handleMouseEvent does the other way
+		var left = 0.0;
+		var top = 0.0;
+		var scaleX = 1.0;
+		var scaleY = 1.0;
+
+		if (canvas != null)
+		{
+			var rect = canvas.getBoundingClientRect();
+			left = rect.left;
+			top = rect.top;
+			if (parent.__width > 0) scaleX = rect.width / parent.__width;
+			if (parent.__height > 0) scaleY = rect.height / parent.__height;
+		}
+		else if (div != null)
+		{
+			var rect = div.getBoundingClientRect();
+			left = rect.left;
+			top = rect.top;
+		}
+
+		if (menus == null) menus = new HTML5Menu(parent);
+		menus.popup(menu, left + x * scaleX, top + y * scaleY);
+	}
 
 	public function readPixels(rect:Rectangle):Image
 	{
@@ -1234,7 +1307,29 @@ class HTML5Window
 		return false;
 	}
 
-	public function setMenu(menu:Menu):Void {}
+	public function setMenu(menu:Menu):Void
+	{
+		// Windows without a menu of their own show the application's
+		if (menu == null && parent.application != null)
+		{
+			menu = parent.application.__menu;
+		}
+
+		if (menus == null)
+		{
+			if (menu == null) return;
+			menus = new HTML5Menu(parent);
+		}
+
+		var height = menus.height;
+		menus.setMenu(menu);
+
+		if (menus.height != height)
+		{
+			cacheElementHeight = -1;
+			updateSize();
+		}
+	}
 
 	public function setMinimized(value:Bool):Bool
 	{
@@ -1360,13 +1455,14 @@ class HTML5Window
 
 	public function setAppearance(value:lime.ui.WindowAppearance):Void
 	{
-		if (parent.element != null) parent.element.style.setProperty("color-scheme", value == lime.ui.WindowAppearance.System ? "light dark" : value);
+		if (parent.element != null) parent.element.style.setProperty("color-scheme", value == lime.ui.WindowAppearance.SYSTEM ? "light dark" : value);
+		if (menus != null) menus.setAppearance();
 	}
 
 	public function getAppearance():lime.ui.WindowAppearance
 	{
-		if (parent.appearance != lime.ui.WindowAppearance.System) return parent.appearance;
-		return Browser.window.matchMedia("(prefers-color-scheme: dark)").matches ? lime.ui.WindowAppearance.Dark : lime.ui.WindowAppearance.Light;
+		if (parent.appearance != lime.ui.WindowAppearance.SYSTEM) return parent.appearance;
+		return Browser.window.matchMedia("(prefers-color-scheme: dark)").matches ? lime.ui.WindowAppearance.DARK : lime.ui.WindowAppearance.LIGHT;
 	}
 
 	public function setTitle(value:String):String
@@ -1440,6 +1536,12 @@ class HTML5Window
 		{
 			elementWidth = Browser.window.innerWidth;
 			elementHeight = Browser.window.innerHeight;
+		}
+
+		// The content goes below the menu bar
+		if (menus != null && parent.element != cast canvas)
+		{
+			elementHeight = Math.max(0, elementHeight - menus.height);
 		}
 
 		var scaleChanged = scale != cacheElementScale;

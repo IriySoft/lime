@@ -7,7 +7,8 @@ Changelog
 - Added an experimental Vulkan renderer for native Windows, Linux, and Android targets.
 - Added `VulkanRenderContext` and Haxe Vulkan bindings for instance, device, swapchain, command, descriptor, memory, and pipeline helpers.
 - Added Vulkan bootstrap logging, error details, MSAA resolve support, mapped memory helpers, and descriptor helpers.
-- Added `<window renderer="vulkan" />`, and the `no-vulkan` define to build without Vulkan. Where Vulkan is not available, the window uses OpenGL.
+- Added the `vulkan` define, which makes Vulkan the default for windows that name no context type, and the `no-vulkan` define to build without Vulkan. Where Vulkan is not available, the window uses OpenGL.
+- Added the `software-gl` define, which falls back to OpenGL drawn in software, before Cairo, on Windows, macOS and Linux. Set `LIME_SOFTWARE_GL=1` to test it. OpenGL contexts drawn in software report `attributes.hardware` as `false`.
 - Added `<config:android vulkan-required="false" />` to let Vulkan applications install on devices without Vulkan, and `<config:android vulkan-version="..." />`.
 - Added configurable application frame timing with `FrameProfile`, `FrameOptions`, `VSyncMode`, busy-wait, time precision, and uncap controls.
 - Added `AudioInput` and audio input device APIs with native OpenAL, HTML5, and Flash backends.
@@ -16,7 +17,9 @@ Changelog
 - Added `AudioBuffer.fromFileStream()`, `AudioBuffer.fromFilesStream()`, `AudioBuffer.fromBytesStream()`, `AudioBuffer.loadFromFileStream()`, and `AudioBuffer.loadFromFilesStream()`, which stream through SDL_sound, or Ogg Vorbis without it.
 - Added `Assets.getAudioBufferStream()` and `Assets.loadAudioBufferStream()` for streamed sound assets.
 - Added recovery of OpenAL Soft audio after its output device changes or is disconnected.
+- Added `AudioSource.playTogether()`, which starts several sources in the same mixer update on native targets, for tracks that must stay aligned.
 - Added `Window.alwaysOnTop` and transparent window support.
+- Added `Window.nativeHandle`, the system's own window and display, for native code that works with them directly.
 - Added input event timestamps without changing listener signatures.
 - Added `Promise.completeAsync()`.
 - Added explicit font rendering flags, DPI-aware glyph rendering, unhinted font decomposition, and HarfBuzz FT font change notifications.
@@ -27,22 +30,31 @@ Changelog
 - Added project.xml support for Android manifest tags and Gradle plugin entries.
 - Added AIR options for Android App Bundles, Android Studio output, and shared runtime deployment.
 - Added VAO support on macOS.
+- Added `GL.copyImageSubData()` for desktop OpenGL 4.3 and `ARB_copy_image`.
+- Added support for libhxcpp's incremental collector. With `HXCPP_GC_INCREMENTAL`, native C++ builds use it and advance a collection in the time left before a frame, unless `no-idle-gc` is defined.
+- Windows builds tell hxcpp where the application runs (`HXCPP_PGO_RUN_DIR`), so libhxcpp's profile-guided optimisation (`HXCPP_PGO`) works on the application in its own folder.
 - Added `VideoSource` and `VideoDecoder` for native video playback, with Media Foundation, AVFoundation, MediaCodec, and GStreamer backends.
 - Added texture output, HDR tone mapping, rotation and pixel aspect ratio, clock modes, gapless loops, stereo pan, skipping of late frames, and network streams to video playback, with NV12, RGBA, BGRA, and ARGB frames.
 - Added `VideoSource` playback on HTML5 through the browser's `<video>` element.
 - Added `VideoSource.loadFromFile()`, and `VideoDecoder.videoUnsupported` and `VideoDecoder.audioUnsupported` for streams of codecs that cannot be decoded.
+- Added `VideoSource.rate`, to play videos at 0.25 to 4 times normal speed.
+- Added the Vorbis sound of Matroska and WebM videos on Windows, which Media Foundation has no decoder for, read with libwebm and decoded with libvorbis.
 - Added `Window.flash()`, `Window.mouseRect`, and `Window.keyboardGrab`.
 - Added `Window.preciseMouseWheel` for smooth scrolling on touchpads and smooth wheels.
 - Added `Window.appearance` and `Window.effectiveAppearance` to prefer light or dark window decorations.
 - Added `Window.onDisplayScaleChange`.
 - Added `Display.onConnect`, `Display.onDisconnect`, and `Display.onMove`.
 - Added `Gamepad.type`, motion sensors, touchpad events, trigger rumble, and light color.
+- Added AIR externs for `air.net.WebSocket` and `flash.events.WebSocketEvent`.
 - Added `Locale.preferredLocales`.
 - Added `ThreadPool.idleTimeout`, so idle threads wait for more work before they exit.
 - Added `CURL.versionInfo()` values for the library's age, version number, and features.
 - Added `HTTPRequest.verifyCertificates`.
 - Added `Menu`, `MenuItem`, `TrayIcon`, and `DockIcon` for native menu bars, context menus, system tray icons, and the macOS Dock, through the new native-desktop dependency.
+- Added the default macOS menu bar to `Application.menu`, which starts as a copy of it whose About, Hide, Services, Quit, and Window items keep working when items are added.
+- Added menu bars and context menus on HTML5, drawn in the page, for `Window.menu`, `Application.menu`, and `Menu.popup()`.
 - Added `LocalServer` and `LocalSocket` for connections between processes of the same user, through the new native-ipc dependency.
+- Added `WebView`, a web page in a window on Windows, Linux, macOS, iOS, Android, AIR and in browsers, through the new StageWebView dependency. The `no-webview` define leaves the webview engine out of native and Android applications.
 - Added `WebSocket` and `WebSocketServer` for `ws://` and `wss://` clients and servers, through the new wsproto dependency, which CrossByte's WebSocket also runs on. Native targets need Haxe 4 for them.
 - Added `AL.getSourcedvSOFT()` for OpenAL Soft's source latency extension.
 - Added `ALC.getStringList()` to list every audio output and input device.
@@ -52,13 +64,14 @@ Changelog
 - Added the `-arm64` flag to build HashLink/C applications for Apple Silicon on macOS, with binaries from `lime rebuild hl -arm64`. HashLink's JIT does not run on Apple Silicon yet.
 - Added running Windows builds through Wine with `lime test` on other platforms.
 - Added the `lime_skip_invisible_windows` define to stop rendering windows that are hidden.
+- Changed native streamed audio to refill from a thread of its own, so a stall on the main thread no longer drains a stream's buffers and drops its sound. Define `lime_audio_no_stream_thread` to refill from the main thread as before.
 - Changed native audio loading to decode through SDL_sound first, then Lime's own WAV and Ogg Vorbis decoders.
 - Changed asset copying and embedding to behave consistently across targets.
 - Changed OpenAL Soft HRTF to be disabled by default.
 - Changed `allowHighDPI` on Windows to draw at each display's own resolution, rather than stretched from 96 DPI.
 - Changed `Window.alert()` to also request attention on macOS and Linux.
 - Changed Windows to show input methods' own composition and candidate windows.
-- Changed `FrameProfile.Uncapped` to uncap the frame loop.
+- Changed `FrameProfile.UNCAPPED` to uncap the frame loop.
 - Changed native HTTP requests to look up names on a thread of their own on every platform.
 - Changed native HTTPS requests to check the server's certificate, against the system's trusted certificates (Mozilla's on iOS and tvOS). Set `HTTPRequest.verifyCertificates` to `false`, or define `lime-insecure-https`, for servers with self-signed certificates.
 - Changed static builds to use Lime's own mbedTLS rather than the one bundled with hxcpp.
@@ -74,10 +87,14 @@ Changelog
 - Changed embedded assets to no longer be copied to the output folder.
 - Changed asset libraries to drop disposed `AudioBuffer` objects from their caches.
 - Changed the iOS Xcode project to Xcode's recommended settings, with identity settings.
+- Changed the HTML5, Flash and WebAssembly test server to CrossByte's `HTTPServer`, run by the command-line tools, rather than http-server on a bundled Node.js, which made the haxelib too large to publish. CrossByte was chosen over snake-server because it answers range requests, which audio and video need to seek. The server listens on `127.0.0.1` unless `--host=0.0.0.0` lets other devices reach it. Building the tools now needs Haxe 4.3 or later, as does serving with `-eval`.
+- Changed desktop applications to take a quit request, such as Ctrl+C, SIGTERM or Cmd+Q, as a close request on every window, so `Window.onClose` runs and can cancel it, and `Application.onExit` follows.
+- Changed `-terser` to run terser through the system's `npx`, as `-npx` did, since Lime no longer bundles Node.js. It needs Node.js installed, and says so when it is not.
 - Updated pixman and platform config for LLVM assembly fixes, ARM NEON, Android NDKs, and Apple platforms.
 - Updated MojoAL and gamepad mappings.
 - Updated SDL submodule to version 2.32.10.
 - Updated mbedTLS to 3.6.7 and curl to 8.23.0, adding TLS 1.3 to native HTTP requests.
+- Updated the bundled CA certificates to Mozilla's 2026-10-20 list, which drops three eMudhra roots.
 - Updated HashLink to 1.16.
 - Fixed an asset embedding regression.
 - Fixed Windows cpp icon resource handling when no icon is generated.
@@ -87,6 +104,9 @@ Changelog
 - Fixed perspective camera matrix calculation.
 - Fixed Tizen `appinfo.json` templating.
 - Fixed Android architecture parsing for `x86_64` and `x86_32`.
+- Fixed `::ANDROID_INSTALL_LOCATION::` in Android manifest templates copied from Lime 8.3 and earlier.
+- Fixed HTML5 gamepad connect and disconnect events.
+- Fixed `projectFilePath` for HXP projects.
 - Fixed HTML5 transparent docs generation.
 - Fixed native HTTP requests freezing the application during slow name lookups (#1769).
 - Fixed HashLink collections waiting on threads blocked in native calls.
@@ -102,11 +122,14 @@ Changelog
 - Fixed SDL frame timing and event handling, and input and window pacing on Windows.
 - Fixed HTML5 frame pacing at 60 fps.
 - Fixed a crash in `HTML5Window` when the display scale differs at startup.
+- Fixed a crash when a native window is closed while it renders, and leaving no OpenGL context current when the window whose context was current is closed.
 - Fixed compressed 3D textures staying empty on desktop OpenGL.
 - Fixed PNG decoding from bytes using its reader after it went out of scope.
 - Fixed a crash opening compressed assets as files on Android.
 - Fixed OpenAL bindings returning uninitialized values, and `AL.sourceUnqueueBuffers()` returning buffers it didn't unqueue.
+- Fixed OpenAL objects deadlocking the collector when finalized, leaking buffers collected before their sources, and deleting the objects of a replacement device.
 - Fixed exceptions thrown in event listeners losing their original call site.
+- Fixed `Event` skipping a listener, or calling one again, when a listener adds or removes listeners while it runs.
 - Fixed constructing `Bytes` with no arguments on HashLink.
 - Fixed `FileDialog` wildcard filters.
 - Fixed the Windows icon resource not being rebuilt when the icon changes.
@@ -117,6 +140,7 @@ Changelog
 - Fixed WebAssembly builds with newer Emscripten versions.
 - Fixed loading an `HTTPRequest` again using a curl handle that had been freed, so the load never reached the server, or changed another request.
 - Fixed a `VorbisFile` opened from bytes reading them after they were collected.
+- Fixed a small memory leak for each `VorbisFile`.
 - Fixed `Font` glyph lookups for characters beyond U+FFFF, such as emoji, and for UTF-8 led by the bytes 0xE0, 0xED, and 0xF0, such as Devanagari and Thai.
 - Fixed `Window.maxWidth` setting the minimum size.
 - Fixed the AIR `DNSResolverEvent` extern giving `bubbles` a String default, which failed builds that use it.

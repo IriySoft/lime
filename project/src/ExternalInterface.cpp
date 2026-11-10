@@ -11,6 +11,9 @@
 #include <app/Application.h>
 #ifdef LIME_SDL
 #include "backend/sdl/SDLApplication.h"
+#ifdef LIME_CONTEXT_RECOVERY_TESTS
+#include "backend/sdl/SDLWindow.h"
+#endif
 #endif
 #include <app/ApplicationEvent.h>
 #include <graphics/format/JPEG.h>
@@ -1591,6 +1594,22 @@ namespace lime {
 
 		Application* app = (Application*)application->ptr;
 		return app->SetMenu (data ? data->b : 0, data ? data->length : 0);
+
+	}
+
+
+	void lime_application_set_idle_events (value application, bool enabled) {
+
+		Application* app = (Application*)val_data (application);
+		app->SetIdleEvents (enabled);
+
+	}
+
+
+	HL_PRIM void HL_NAME(hl_application_set_idle_events) (HL_CFFIPointer* application, bool enabled) {
+
+		Application* app = (Application*)application->ptr;
+		app->SetIdleEvents (enabled);
 
 	}
 
@@ -4210,6 +4229,31 @@ namespace lime {
 	}
 
 
+	value lime_menu_get_application_menu (value data) {
+
+		std::vector<unsigned char> menu;
+		if (!Menu::GetApplicationMenu (&menu)) return alloc_null ();
+
+		Bytes bytes (data);
+		bytes.Resize ((int)menu.size ());
+		if (!menu.empty ()) memcpy (bytes.b, &menu[0], menu.size ());
+		return bytes.Value (data);
+
+	}
+
+
+	HL_PRIM Bytes* HL_NAME(hl_menu_get_application_menu) (Bytes* data) {
+
+		std::vector<unsigned char> menu;
+		if (!data || !Menu::GetApplicationMenu (&menu)) return NULL;
+
+		data->Resize ((int)menu.size ());
+		if (!menu.empty ()) memcpy (data->b, &menu[0], menu.size ());
+		return data;
+
+	}
+
+
 	int lime_menu_get_support () {
 
 		return Menu::GetSupport ();
@@ -5017,18 +5061,34 @@ namespace lime {
 
 	void lime_window_alert (value window, HxString message, HxString title) {
 
-		Window* targetWindow = (Window*)val_data (window);
-		targetWindow->Alert (hxs_utf8 (message, nullptr), hxs_utf8 (title, nullptr));
+		Window* targetWindow = val_is_null (window) ? NULL : (Window*)val_data (window);
+		if (targetWindow) {
+
+			targetWindow->Alert (hxs_utf8 (message, nullptr), hxs_utf8 (title, nullptr));
+
+		} else {
+
+			AlertWindow (hxs_utf8 (message, nullptr), hxs_utf8 (title, nullptr));
+
+		}
 
 	}
 
 
 	HL_PRIM void HL_NAME(hl_window_alert) (HL_CFFIPointer* window, hl_vstring* message, hl_vstring* title) {
 
-		Window* targetWindow = (Window*)window->ptr;
+		Window* targetWindow = window ? (Window*)window->ptr : NULL;
 		const char *cmessage = message ? hl_to_utf8(message->bytes) : nullptr;
 		const char *ctitle = title ? hl_to_utf8(title->bytes) : nullptr;
-		targetWindow->Alert (cmessage, ctitle);
+		if (targetWindow) {
+
+			targetWindow->Alert (cmessage, ctitle);
+
+		} else {
+
+			AlertWindow (cmessage, ctitle);
+
+		}
 
 	}
 
@@ -5083,6 +5143,16 @@ namespace lime {
 
 	}
 
+	#if defined(LIME_SDL) && defined(LIME_CONTEXT_RECOVERY_TESTS)
+	value lime_window_test_context_replacement (value window, value create) {
+
+		if (val_is_null (window)) return alloc_bool (false);
+		return alloc_bool (((SDLWindow*)val_data (window))->TestContextReplacement (val_bool (create)));
+
+	}
+	DEFINE_PRIM (lime_window_test_context_replacement, 2);
+	#endif
+
 
 	HL_PRIM void HL_NAME(hl_window_context_make_current) (HL_CFFIPointer* window) {
 
@@ -5109,6 +5179,21 @@ namespace lime {
 
 		Window* window = CreateWindow ((Application*)val_data (application), width, height, flags, hxs_utf8 (title, nullptr));
 		return CFFIPointer (window, gc_window);
+
+	}
+
+
+	value lime_window_get_creation_error () {
+
+		return alloc_string (GetWindowCreationError ());
+
+	}
+
+
+	HL_PRIM vbyte* HL_NAME(hl_window_get_creation_error) () {
+
+		const char* error = GetWindowCreationError ();
+		return hl_copy_bytes ((const vbyte*)error, (int)std::strlen (error) + 1);
 
 	}
 
@@ -13644,6 +13729,16 @@ namespace lime {
 	value lime_window_set_display_mode (value window, value displayMode) {
 
 		Window* targetWindow = (Window*)val_data (window);
+
+		if (val_is_null (displayMode)) {
+
+			targetWindow->SetDisplayMode (0);
+			DisplayMode _displayMode;
+			targetWindow->GetDisplayMode (&_displayMode);
+			return (value)_displayMode.Value ();
+
+		}
+
 		DisplayMode _displayMode (displayMode);
 		targetWindow->SetDisplayMode (&_displayMode);
 		targetWindow->GetDisplayMode (&_displayMode);
@@ -13656,8 +13751,7 @@ namespace lime {
 
 		Window* targetWindow = (Window*)window->ptr;
 		targetWindow->SetDisplayMode (displayMode);
-		targetWindow->GetDisplayMode (displayMode);
-		result->CopyFrom(displayMode);
+		targetWindow->GetDisplayMode (result);
 
 	}
 
@@ -13814,6 +13908,50 @@ namespace lime {
 		hl_dyn_seti (rect, hl_hash_utf8 ("width"), &hlt_i32, width);
 		hl_dyn_seti (rect, hl_hash_utf8 ("height"), &hlt_i32, height);
 		return rect;
+
+	}
+
+
+	value lime_window_get_native_handle (value window) {
+
+		Window* targetWindow = (Window*)val_data (window);
+		void* handle;
+		void* display;
+		int type = targetWindow->GetNativeHandle (&handle, &display);
+
+		if (type == WINDOW_HANDLE_NONE) {
+
+			return alloc_null ();
+
+		}
+
+		value result = alloc_empty_object ();
+		alloc_field (result, val_id ("type"), alloc_int (type));
+		alloc_field (result, val_id ("window"), CreateVulkanHandleValue ((uint64_t)(uintptr_t)handle));
+		alloc_field (result, val_id ("display"), CreateVulkanHandleValue ((uint64_t)(uintptr_t)display));
+		return result;
+
+	}
+
+
+	HL_PRIM vdynamic* HL_NAME(hl_window_get_native_handle) (HL_CFFIPointer* window) {
+
+		Window* targetWindow = (Window*)window->ptr;
+		void* handle;
+		void* display;
+		int type = targetWindow->GetNativeHandle (&handle, &display);
+
+		if (type == WINDOW_HANDLE_NONE) {
+
+			return NULL;
+
+		}
+
+		vdynamic* result = (vdynamic*)hl_alloc_dynobj ();
+		hl_dyn_seti (result, hl_hash_utf8 ("type"), &hlt_i32, type);
+		hl_dyn_setp (result, hl_hash_utf8 ("window"), &hlt_dynobj, HLCreateVulkanHandleValue ((uint64_t)(uintptr_t)handle));
+		hl_dyn_setp (result, hl_hash_utf8 ("display"), &hlt_dynobj, HLCreateVulkanHandleValue ((uint64_t)(uintptr_t)display));
+		return result;
 
 	}
 
@@ -14102,6 +14240,7 @@ namespace lime {
 	DEFINE_PRIME1 (lime_application_exec);
 	DEFINE_PRIME1v (lime_application_init);
 	DEFINE_PRIME1 (lime_application_quit);
+	DEFINE_PRIME2v (lime_application_set_idle_events);
 	DEFINE_PRIME6v (lime_application_set_main_loop);
 	DEFINE_PRIME2v (lime_application_set_frame_rate);
 	DEFINE_PRIME5v (lime_application_set_modal_callbacks);
@@ -14217,6 +14356,7 @@ namespace lime {
 	DEFINE_PRIME2 (lime_lzma_compress);
 	DEFINE_PRIME2 (lime_lzma_decompress);
 	DEFINE_PRIME2v (lime_menu_event_manager_register);
+	DEFINE_PRIME1 (lime_menu_get_application_menu);
 	DEFINE_PRIME0 (lime_menu_get_support);
 	DEFINE_PRIME2v (lime_mouse_event_manager_register);
 	DEFINE_PRIME1v (lime_neko_execute);
@@ -14261,6 +14401,7 @@ namespace lime {
 	DEFINE_PRIME1v (lime_window_context_make_current);
 	DEFINE_PRIME1v (lime_window_context_unlock);
 	DEFINE_PRIME5 (lime_window_create);
+	DEFINE_PRIME0 (lime_window_get_creation_error);
 	DEFINE_PRIME2v (lime_window_event_manager_register);
 	DEFINE_PRIME1v (lime_window_focus);
 	DEFINE_PRIME1 (lime_window_get_context);
@@ -14402,6 +14543,7 @@ namespace lime {
 	DEFINE_PRIME2 (lime_window_flash);
 	DEFINE_PRIME1 (lime_window_get_keyboard_grab);
 	DEFINE_PRIME1 (lime_window_get_mouse_rect);
+	DEFINE_PRIME1 (lime_window_get_native_handle);
 	DEFINE_PRIME2v (lime_window_set_keyboard_grab);
 	DEFINE_PRIME2v (lime_window_set_mouse_lock);
 	DEFINE_PRIME5v (lime_window_set_mouse_rect);
@@ -14460,6 +14602,7 @@ namespace lime {
 	DEFINE_HL_PRIM (_I32, hl_application_exec, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_VOID, hl_application_init, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_I32, hl_application_quit, _TCFFIPOINTER);
+	DEFINE_HL_PRIM (_VOID, hl_application_set_idle_events, _TCFFIPOINTER _BOOL);
 	DEFINE_HL_PRIM (_VOID, hl_application_set_main_loop, _TCFFIPOINTER _I32 _F64 _I32 _I32 _I32);
 	DEFINE_HL_PRIM (_VOID, hl_application_set_frame_rate, _TCFFIPOINTER _F64);
 	DEFINE_HL_PRIM (_VOID, hl_application_set_modal_callbacks, _TCFFIPOINTER _FUN(_VOID, _NO_ARG) _FUN(_VOID, _NO_ARG) _FUN(_VOID, _NO_ARG) _FUN(_VOID, _NO_ARG));
@@ -14574,6 +14717,7 @@ namespace lime {
 	DEFINE_HL_PRIM (_TBYTES, hl_lzma_compress, _TBYTES _TBYTES);
 	DEFINE_HL_PRIM (_TBYTES, hl_lzma_decompress, _TBYTES _TBYTES);
 	DEFINE_HL_PRIM (_VOID, hl_menu_event_manager_register, _FUN (_VOID, _NO_ARG) _TMENU_EVENT);
+	DEFINE_HL_PRIM (_TBYTES, hl_menu_get_application_menu, _TBYTES);
 	DEFINE_HL_PRIM (_I32, hl_menu_get_support, _NO_ARG);
 	DEFINE_HL_PRIM (_VOID, hl_mouse_event_manager_register, _FUN (_VOID, _NO_ARG) _TMOUSE_EVENT);
 	// DEFINE_PRIME1v (lime_neko_execute);
@@ -14622,6 +14766,7 @@ namespace lime {
 	DEFINE_HL_PRIM (_VOID, hl_window_focus, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_F64, hl_window_get_context, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_BYTES, hl_window_get_context_type, _TCFFIPOINTER);
+	DEFINE_HL_PRIM (_BYTES, hl_window_get_creation_error, _NO_ARG);
 	DEFINE_HL_PRIM (_DYN, hl_window_create_vulkan_surface, _TCFFIPOINTER _I32 _I32);
 	DEFINE_HL_PRIM (_I32, hl_window_get_display, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_VOID, hl_window_get_display_mode, _TCFFIPOINTER _TDISPLAYMODE);
@@ -14759,6 +14904,7 @@ namespace lime {
 	DEFINE_HL_PRIM (_BOOL, hl_window_flash, _TCFFIPOINTER _I32);
 	DEFINE_HL_PRIM (_BOOL, hl_window_get_keyboard_grab, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_DYN, hl_window_get_mouse_rect, _TCFFIPOINTER);
+	DEFINE_HL_PRIM (_DYN, hl_window_get_native_handle, _TCFFIPOINTER);
 	DEFINE_HL_PRIM (_VOID, hl_window_set_keyboard_grab, _TCFFIPOINTER _BOOL);
 	DEFINE_HL_PRIM (_VOID, hl_window_set_mouse_lock, _TCFFIPOINTER _BOOL);
 	DEFINE_HL_PRIM (_VOID, hl_window_set_mouse_rect, _TCFFIPOINTER _I32 _I32 _I32 _I32);
@@ -14818,6 +14964,7 @@ extern "C" int lime_sdl_sound_register_prims () { return 0; }
 
 extern "C" int lime_local_socket_register_prims ();
 extern "C" int lime_video_register_prims ();
+extern "C" int lime_web_view_register_prims ();
 
 #ifdef LIME_VORBIS
 extern "C" int lime_vorbis_register_prims ();
@@ -14837,6 +14984,7 @@ extern "C" int lime_register_prims () {
 	lime_sdl_sound_register_prims ();
 	lime_video_register_prims ();
 	lime_vorbis_register_prims ();
+	lime_web_view_register_prims ();
 
 	return 0;
 
